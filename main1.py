@@ -19,6 +19,8 @@ def start(message):
         "Choose_School_Count": False,
         "Id_School": None,
         "U_School_Admin": False,
+        "Dish": {},
+        "Markup": None
     }
     bot.send_message(message.from_user.id, "Здравствуйте", reply_markup=types.ReplyKeyboardRemove(),
                      parse_mode='Markdown')
@@ -27,7 +29,6 @@ def start(message):
     for i in Schools_list:
         text += f'{i["id"]} - {i["name"]}\n'
     bot.send_message(message.from_user.id, text)
-
     bot.register_next_step_handler(message, send_send)
 
 
@@ -35,17 +36,16 @@ def send_send(message):
     user_id = message.from_user.id
     global users
     if str(message.text) in Schools_list_ids:
-        users[user_id] = {
-            "Choose_School_Count": True,
-            "Id_School": str(message.text),
-            "U_School_Admin": False,
-        }
+        users[user_id]["Choose_School_Count"] = True
+        users[user_id]["Id_School"] = str(message.text)
+
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         button1 = types.KeyboardButton("Все меню")
         button2 = types.KeyboardButton("Меню на сегодня")
         button3 = types.KeyboardButton("Расписание всех классов")
         markup.add(button1, button2, button3)
-        bot.send_message(message.from_user.id, "Для вас открылся доступ к нескольким кнопкам", reply_markup=markup)
+        users[user_id]["Markup"] = markup
+        bot.send_message(message.from_user.id, f"Вы присоединились к", reply_markup=markup)
         return
     bot.send_message(message.from_user.id, "Такого кода школы нет")
     bot.register_next_step_handler(message, send_send)
@@ -72,9 +72,8 @@ def Input_Admin_Password(message):
             button5 = types.KeyboardButton("Изменить блюдо в меню")
             button6 = types.KeyboardButton("Удалить блюдо из меню")
             markup.add(button1, button2, button3, button4, button5, button6)
-            bot.send_message(message.from_user.id, "Для вас открылся доступ к нескольким кнопкам", reply_markup=markup)
-        else:
-            bot.send_message(message.from_user.id, "Вы ввели неправильный пароль")
+            users[user_id]["Markup"] = markup
+            bot.send_message(message.from_user.id, "Для вас открылся доступ к админ панели", reply_markup=markup)
 
 
 @bot.message_handler(content_types=['text'])
@@ -82,101 +81,111 @@ def Choose_School(message):
     user_id = message.from_user.id
     user_condition = users[user_id]
     if str(message.text) == "Все меню":
-        r = requests.get(f'https://12447695.pythonanywhere.com/api/dishes/{user_condition["Id_School"]}').json()
-        for i in r:
-            s = i['count']
-            s1 = i['isHere']
-            if s1:
-                s1 = 'в наличии на сегодня'
-            else:
-                s1 = 'не в наличии на сегодня'
-            s2 = i['name']
-            bot.send_message(message.from_user.id, f' {s2} - {s} руб. - {s1}')
+        dishes = requests.get(f'https://12447695.pythonanywhere.com/api/dishes/{user_condition["Id_School"]}').json()
+        text = ""
+        for i in dishes:
+            text += f"{i['name']} - {i['count']} руб. \n"
+        bot.send_message(message.from_user.id, text)
     elif str(message.text) == "Меню на сегодня":
-        r = requests.get(f'https://12447695.pythonanywhere.com/api/dishes/{user_condition["Id_School"]}/now').json()
+        dishes = requests.get(
+            f'https://12447695.pythonanywhere.com/api/dishes/{user_condition["Id_School"]}/now').json()
         bot.send_message(message.from_user.id, 'Все блюдо на сегодня')
-        for i in r:
-            s = i['count']
-            s2 = i['name']
-            bot.send_message(message.from_user.id, f'{s2} - {s} руб.')
+        text = ""
+        for i in dishes:
+            text += f"{i['name']} - {i['count']} руб. \n"
+        bot.send_message(message.from_user.id, text)
     elif str(message.text) == "Расписание всех классов":
         pass
     elif str(message.text) == "Добавить новое блюдо в меню" and user_condition["U_School_Admin"]:
-        bot.send_message(message.from_user.id, "Напишите в одну строчку через пробел подряд")
-        bot.send_message(message.from_user.id, "Название блюда, его цену,")
-        bot.send_message(message.from_user.id, "А также если оно сегодня есть в меню напишите 'Да' если нет, то 'Нет'")
-        bot.register_next_step_handler(message, Add_dish)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button = types.KeyboardButton("Отмена")
+        markup.add(button)
+
+        bot.send_message(message.from_user.id, "Напишите название блюда", reply_markup=markup)
+        bot.register_next_step_handler(message, Add_dish_name)
     elif str(message.text) == "Изменить блюдо в меню" and user_condition["U_School_Admin"]:
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button = types.KeyboardButton("Отмена")
+        markup.add(button)
+
         bot.send_message(message.from_user.id, "Напишите в одну строчку через пробел подряд")
         bot.send_message(message.from_user.id, "Название блюда которое вы хотите изменить, его новую цену,")
         bot.send_message(message.from_user.id, "А также если оно сегодня есть в меню напишите 'Да' если нет, то 'Нет'")
         bot.register_next_step_handler(message, Set_dish)
     elif str(message.text) == "Удалить блюдо из меню" and user_condition["U_School_Admin"]:
-        bot.send_message(message.from_user.id, "Напишите в одну строчку подряд")
-        bot.send_message(message.from_user.id, "Название блюда, которого вы хотите удалить")
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button = types.KeyboardButton("Отмена")
+        markup.add(button)
+
+        bot.send_message(message.from_user.id, "Напишите название блюда, которого вы хотите удалить")
         bot.register_next_step_handler(message, Del_dish)
 
 
-def Add_dish(message):
+def Add_dish_name(message):
+    if str(message.text).strip() == "Отмена":
+        close_dish(message)
+        return
     user_id = message.from_user.id
-    s = str(message.text)
-    s = s.strip()
-    s = s.split()
-    r = requests.get(
-        f'https://12447695.pythonanywhere.com/api/dishes/{users[user_id]["Id_School"]}/add/{s[0].capitalize()}/{s[1]}/{s[2]}')
-    bot.send_message(message.from_user.id, "Блюдо было успешно добавлено")
-    bot.send_message(message.from_user.id, "Если вы прямо сейчас хотите отменить действие напишите 'Да'")
-    bot.send_message(message.from_user.id, "Если же вы не хотите отменить действие напишите 'Нет'")
-    bot.register_next_step_handler(message, Cancel_Add_dish)
+    users[user_id]["Dish"]["Name"] = str(message.text).strip()
+
+    bot.send_message(message.from_user.id, "Напишите цену блюда")
+    bot.register_next_step_handler(message, Add_dish_count)
+
+
+def Add_dish_count(message):
+    if str(message.text).strip() == "Отмена":
+        close_dish(message)
+        return
+    user_id = message.from_user.id
+    users[user_id]["Dish"]["Count"] = int(str(message.text).strip())
+
+    bot.send_message(message.from_user.id, f"Напишите \"Да\", если блюдо есть в наличии, или \"Нет\", если нет")
+    bot.register_next_step_handler(message, Add_dish_isHere)
+
+
+def Add_dish_isHere(message):
+    if str(message.text).strip() == "Отмена":
+        close_dish(message)
+        return
+
+    isHere = 0
+    if str(message.text).strip().lower() == "да":
+        isHere = 1
+    elif str(message.text).strip().lower() == "нет":
+        isHere = 0
+    else:
+        bot.send_message(message.from_user.id, "Неверный формат")
+        bot.register_next_step_handler(message, Add_dish_isHere)
+
+    user_id = message.from_user.id
+    requests.get(
+        f'https://12447695.pythonanywhere.com/api/dishes'
+        f'/{users[user_id]["Id_School"]}/add/{users[user_id]["Dish"]["Name"].capitalize()}/{users[user_id]["Dish"]["Count"]}/{isHere}')
+    bot.send_message(message.from_user.id, "Блюдо было успешно добавлено", reply_markup=users[user_id]["Markup"])
+
+
+def close_dish(message):
+    user_id = message.from_user.id
+    bot.send_message(message.from_user.id, "Вы отменили редактирование блюда", reply_markup=users[user_id]["Markup"])
 
 
 def Set_dish(message):
     user_id = message.from_user.id
-    s = str(message.text)
-    s = s.strip()
-    s = s.split()
-    r = requests.get(
-        f'https://12447695.pythonanywhere.com/api/dishes/{users[user_id]["Id_School"]}/set/{s[0].capitalize()}/{s[1]}/{s[2]}')
+    s = str(message.text).strip().split()
+    requests.get(
+        f'https://12447695.pythonanywhere.com/api/dishes'
+        f'/{users[user_id]["Id_School"]}/set/{s[0].capitalize()}/{s[1]}/{s[2]}')
     bot.send_message(message.from_user.id, "Блюдо было успешно изменино")
-    bot.send_message(message.from_user.id, "Если вы прямо сейчас хотите отменить действие напишите 'Да'")
-    bot.send_message(message.from_user.id, "Если же вы не хотите отменить действие напишите 'Нет'")
-    bot.register_next_step_handler(message, Cancel_Set_dish)
+
 
 def Del_dish(message):
     user_id = message.from_user.id
     s = str(message.text)
-    print(s)
     s = s.strip()
-    r = requests.get(
-        f'https://12447695.pythonanywhere.com/api/dishes/{users[user_id]["Id_School"]}/del/{s.capitalize()}')
+    requests.get(
+        f'https://12447695.pythonanywhere.com/api/dishes'
+        f'/{users[user_id]["Id_School"]}/del/{s.capitalize()}')
     bot.send_message(message.from_user.id, "Блюдо было успешно удалено")
-    bot.send_message(message.from_user.id, "Если вы прямо сейчас хотите отменить действие напишите 'Да'")
-    bot.send_message(message.from_user.id, "Если же вы не хотите отменить действие напишите 'Нет'")
-    bot.register_next_step_handler(message, Cancel_Del_dish)
-
-
-def Cancel_Add_dish(message):
-    user_id = message.from_user.id
-    s = str(message).lower()
-    s = s.strip()
-    if s == "да":
-        pass
-
-
-def Cancel_Set_dish(message):
-    user_id = message.from_user.id
-    s = str(message).lower()
-    s = s.strip()
-    if s == "да":
-        pass
-
-
-def Cancel_Del_dish(message):
-    user_id = message.from_user.id
-    s = str(message).lower()
-    s = s.strip()
-    if s == "да":
-        pass
 
 
 bot.polling(none_stop=True, interval=0)
